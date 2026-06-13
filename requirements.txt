@@ -1,0 +1,13 @@
+PyQt5==5.15.10
+shapely==1.8.5.post1
+numpy<2
+rtree
+lxml
+ezdxf
+svg.path
+rasterio
+ortools<9.12
+simplejson
+descartes
+vispy==0.8.1
+PyOpenGL
