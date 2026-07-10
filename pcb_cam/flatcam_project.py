@@ -9,6 +9,25 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+from .alignment import (
+    PCB_ALIGNMENT,
+    alignment_points,
+    apply_alignment_defaults,
+    serialize_alignment_drills,
+    serialize_flip_axis_geometry,
+)
+from .isolation import (
+    COPPER_ISOLATION,
+    apply_isolation_defaults,
+    serialize_isolation_geometry,
+)
+from .painting import (
+    SILKSCREEN_PAINT,
+    SOLDER_MASK_PAINT,
+    apply_paint_defaults,
+    serialize_paint_geometry,
+)
+
 
 VERSION = 8.994
 
@@ -27,6 +46,14 @@ EXCELLON_FILES = [
     "Drill_PTH_Through.DRL",
     "Drill_PTH_Through_Via.DRL",
 ]
+
+TOP_LAYER_FILE = "Gerber_TopLayer.GTL"
+BOTTOM_LAYER_FILE = "Gerber_BottomLayer.GBL"
+BOARD_OUTLINE_FILE = "Gerber_BoardOutlineLayer.GKO"
+TOP_SILKSCREEN_FILE = "Gerber_TopSilkscreenLayer.GTO"
+TOP_SOLDER_MASK_FILE = "Gerber_TopSolderMaskLayer.GTS"
+BOTTOM_SILKSCREEN_FILE = "Gerber_BottomSilkscreenLayer.GBO"
+BOTTOM_SOLDER_MASK_FILE = "Gerber_BottomSolderMaskLayer.GBS"
 
 
 class _Signal:
@@ -144,9 +171,14 @@ def color_pair(defaults: dict, index: int) -> tuple[str, str]:
     return defaults.get("gerber_plot_line", "#006E20bf"), defaults.get("gerber_plot_fill", "#BBF268bf")
 
 
-def serialize_gerber(path: Path, index: int, camlib, Gerber, defaults: dict) -> dict:
+def parse_gerber(path: Path, Gerber, defaults: dict):
     obj = Gerber(steps_per_circle=int(defaults["gerber_circle_steps"]))
     obj.parse_file(str(path))
+    return obj
+
+
+def serialize_gerber(path: Path, index: int, camlib, Gerber, defaults: dict, obj=None) -> dict:
+    obj = obj or parse_gerber(path, Gerber, defaults)
     data = obj.to_dict()
 
     outline_color, fill_color = color_pair(defaults, index)
@@ -161,6 +193,84 @@ def serialize_gerber(path: Path, index: int, camlib, Gerber, defaults: dict) -> 
     )
     data["options"]["solid"] = True
     return data
+
+
+def build_objects(project_dir: Path, camlib, Gerber, Excellon, defaults: dict) -> list[dict]:
+    ready_dir = project_dir / "gerber" / "ready"
+    if not ready_dir.exists():
+        raise SystemExit(f"Missing gerber/ready directory: {ready_dir}")
+
+    objects = []
+    parsed_gerbers = {}
+    for name in GERBER_FILES:
+        path = ready_dir / name
+        if path.exists():
+            print(f"gerber: {name}")
+            gerber = parse_gerber(path, Gerber, defaults)
+            objects.append(serialize_gerber(path, len(objects), camlib, Gerber, defaults, obj=gerber))
+            parsed_gerbers[name] = gerber
+
+    for name in EXCELLON_FILES:
+        path = ready_dir / name
+        if path.exists():
+            print(f"excellon: {name}")
+            data = serialize_excellon(path, camlib, Excellon, defaults)
+            if data is None:
+                print(f"  skipped empty/unparseable excellon: {name}")
+            else:
+                objects.append(data)
+
+    board_outline = parsed_gerbers.get(BOARD_OUTLINE_FILE)
+    if board_outline is None:
+        raise SystemExit(
+            f"Missing board outline required for PCB alignment: {ready_dir / BOARD_OUTLINE_FILE}"
+        )
+
+    apply_alignment_defaults(defaults, PCB_ALIGNMENT)
+    drill_points = alignment_points(board_outline, PCB_ALIGNMENT)
+    point_text = ", ".join(f"({point.x:.4f}, {point.y:.4f})" for point in drill_points)
+    print(
+        f"alignment: {BOARD_OUTLINE_FILE} dia={PCB_ALIGNMENT.drill_diameter:g} "
+        f"axis={PCB_ALIGNMENT.axis} clearance={PCB_ALIGNMENT.clearance:g}mm points={point_text}"
+    )
+    alignment_drills = serialize_alignment_drills(board_outline, Excellon, defaults)
+    objects.append(alignment_drills)
+    objects.append(serialize_flip_axis_geometry(alignment_drills, defaults))
+
+    side_recipes = (
+        (TOP_LAYER_FILE, TOP_SILKSCREEN_FILE, TOP_SOLDER_MASK_FILE),
+        (BOTTOM_LAYER_FILE, BOTTOM_SILKSCREEN_FILE, BOTTOM_SOLDER_MASK_FILE),
+    )
+    for copper_name, silkscreen_name, solder_mask_name in side_recipes:
+        copper = parsed_gerbers.get(copper_name)
+        if copper is None:
+            raise SystemExit(f"Missing copper layer required for isolation: {ready_dir / copper_name}")
+
+        print(
+            f"isolation: {copper_name} "
+            f"dia={COPPER_ISOLATION.tool_diameter} type={COPPER_ISOLATION.tool_type} "
+            f"passes={COPPER_ISOLATION.passes} overlap={COPPER_ISOLATION.overlap:g}% "
+            f"milling={COPPER_ISOLATION.milling_type} "
+            f"isolation={COPPER_ISOLATION.isolation_type} combine=yes"
+        )
+        apply_isolation_defaults(defaults, COPPER_ISOLATION)
+        objects.append(serialize_isolation_geometry(copper, copper_name, defaults))
+
+        paint_recipes = (
+            (silkscreen_name, SILKSCREEN_PAINT),
+            (solder_mask_name, SOLDER_MASK_PAINT),
+        )
+        for source_name, config in paint_recipes:
+            gerber = parsed_gerbers.get(source_name)
+            if gerber is None:
+                raise SystemExit(f"Missing layer required for paint geometry: {ready_dir / source_name}")
+            print(
+                f"paint: {source_name} dia={config.tool_diameter} type={config.tool_type} "
+                f"overlap={config.overlap:g}% method=seed connect=yes contour=yes"
+            )
+            apply_paint_defaults(defaults, config)
+            objects.append(serialize_paint_geometry(gerber, source_name, defaults, config))
+    return objects
 
 
 def _geometry_count(geometries) -> int:
@@ -209,26 +319,7 @@ def serialize_excellon(path: Path, camlib, Excellon, defaults: dict) -> dict | N
 
 def build_project(project_dir: Path, flatcam_source: Path) -> dict:
     camlib, Gerber, Excellon, defaults = import_flatcam(flatcam_source)
-    ready_dir = project_dir / "gerber" / "ready"
-    if not ready_dir.exists():
-        raise SystemExit(f"Missing gerber/ready directory: {ready_dir}")
-
-    objects = []
-    for name in GERBER_FILES:
-        path = ready_dir / name
-        if path.exists():
-            print(f"gerber: {name}")
-            objects.append(serialize_gerber(path, len(objects), camlib, Gerber, defaults))
-
-    for name in EXCELLON_FILES:
-        path = ready_dir / name
-        if path.exists():
-            print(f"excellon: {name}")
-            data = serialize_excellon(path, camlib, Excellon, defaults)
-            if data is None:
-                print(f"  skipped empty/unparseable excellon: {name}")
-            else:
-                objects.append(data)
+    objects = build_objects(project_dir, camlib, Gerber, Excellon, defaults)
 
     return {
         "objs": objects,
@@ -250,27 +341,7 @@ def command_flatprj(args: argparse.Namespace) -> int:
     flatcam_source = host_path(args.flatcam_source)
 
     camlib, _Gerber, _Excellon, defaults = import_flatcam(flatcam_source)
-    # Reuse already imported modules/defaults by building with a local helper.
-    ready_dir = project_dir / "gerber" / "ready"
-    if not ready_dir.exists():
-        raise SystemExit(f"Missing gerber/ready directory: {ready_dir}")
-
-    objects = []
-    for name in GERBER_FILES:
-        path = ready_dir / name
-        if path.exists():
-            print(f"gerber: {name}")
-            objects.append(serialize_gerber(path, len(objects), camlib, _Gerber, defaults))
-
-    for name in EXCELLON_FILES:
-        path = ready_dir / name
-        if path.exists():
-            print(f"excellon: {name}")
-            data = serialize_excellon(path, camlib, _Excellon, defaults)
-            if data is None:
-                print(f"  skipped empty/unparseable excellon: {name}")
-            else:
-                objects.append(data)
+    objects = build_objects(project_dir, camlib, _Gerber, _Excellon, defaults)
 
     project = {"objs": objects, "options": defaults, "version": VERSION}
     write_project(project, output, camlib, int(defaults.get("global_compression_level", 3)))
