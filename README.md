@@ -2,6 +2,33 @@
 
 Headless PCB CAM experiments for the EasyEDA -> FlatCAM-style -> NC workflow.
 
+## Windows app
+
+The native Windows wizard in `windows/PcbCam.Windows` provides drag-and-drop
+Gerber ZIP input, project-folder selection, prerequisite validation, live build
+progress, cancellation, and a shortcut to the finished output. It runs this
+same proven Ruby/Python pipeline invisibly, so its FlatCAM and Carvera
+outputs match the command-line workflow.
+
+Build it from PowerShell with the .NET 6 SDK:
+
+```powershell
+.\windows\build.ps1
+```
+
+Create a ready-to-run Windows folder under `artifacts/PcbCam`:
+
+```powershell
+.\windows\build.ps1 -Publish
+```
+
+Run `PcbCam.exe` from that folder. The app locates the repository by walking up
+from its executable. If the published folder is moved elsewhere, set
+`PCB_CAM_ROOT` to the repository root. The current manufacturing backend still
+requires Windows Ruby, the repository `.venv`, FlatCAM source, the legacy
+project starter, and Windows PowerShell; the app checks the local prerequisites
+before starting and shows actionable errors without opening a terminal.
+
 The first milestone is a project starter that uses the existing PCB template
 flow, then uses FlatCAM Beta source parsers directly to write FlatCAM's
 compressed JSON `.FlatPrj` format without launching the FlatCAM GUI.
@@ -69,11 +96,13 @@ top solder-mask clearing, and alignment drills. After the physical Y-axis flip,
 steps 5-7 repeat the three geometry operations for the prepared/mirrored bottom
 layers. Dynamic `DrillN.DRL` jobs begin at step 8.
 
-The generated `scripts/gen.all.sh` keeps the existing post-processing pattern.
+The generated `scripts/gen.all.ps1` keeps the existing post-processing pattern
+and is what the high-level workflow runs on Windows. A matching `gen.all.sh` is
+still written for command-line compatibility, but Cygwin is no longer required.
 Its final managed block has one explicit `DRILLn_TOOL` Carvera mapping per
 dynamic drill group and combines all groups with tool changes. The first three
 groups default to `Drill1=T6` (approximately 0.95 mm), `Drill2=T1` (1.1 mm),
-and `Drill3=T4` (3.0 mm). The high-level Ruby command runs `gen.all.sh`
+and `Drill3=T4` (3.0 mm). The high-level Ruby command runs `gen.all.ps1`
 automatically after generating the FlatCAM project, so it produces the
 machine-ready files in `cut` as part of the same workflow. Saved mappings and
 environment overrides are preserved. A fourth or later group defaults to

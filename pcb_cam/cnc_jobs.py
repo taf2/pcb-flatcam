@@ -394,6 +394,17 @@ def _existing_drill_mappings(script: str) -> dict[int, str]:
     return mappings
 
 
+def _existing_powershell_drill_mappings(script: str) -> dict[int, str]:
+    mappings = {}
+    pattern = re.compile(
+        r'^\$Drill(\d+)Tool\s*=.*?else\s*\{\s*"([^"]+)"\s*\}',
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(script):
+        mappings[int(match.group(1))] = match.group(2)
+    return mappings
+
+
 def _default_script_prefix() -> str:
     return '''#!/usr/bin/env bash
 set -euo pipefail
@@ -532,8 +543,177 @@ def write_gen_all_script(
     return script_path
 
 
+def _default_powershell_prefix() -> str:
+    return '''param(
+  [string]$Ruby = "ruby",
+  [string]$LaserXOffset = "-0.5",
+  [string]$LaserYOffset = "0.3",
+  [string]$TopPadDepthRule = "0.1366=0.012",
+  [string]$BottomPadDepthRule = "0.1366=0.012"
+)
+
+$ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Force -Path "cut" | Out-Null
+
+# T1: 1.1 mm drill/cutter, large holes and final cutout
+# T2: 0.1 mm / 60 deg V-bit, isolation
+# T3: 2.0 mm endmill, alignment peg holes
+# T4: 3.0 mm drill, large holes
+# T5: 0.3 mm / 30 deg V-bit or spring bit, solder mask pad clearing
+# T6: approximately 0.95 mm drill, vias/small holes
+
+& $Ruby scripts/post-makera.rb flatcam/step1-top-iso.nc T2
+if (Test-Path flatcam/step2-top-pads.nc) {
+  & $Ruby scripts/post-laser-makera.rb flatcam/step2-top-pads.nc 70 $LaserXOffset $LaserYOffset 900
+}
+if (Test-Path flatcam/step2-top-silk.nc) {
+  & $Ruby scripts/post-laser-makera.rb flatcam/step2-top-silk.nc 10 $LaserXOffset $LaserYOffset 150
+}
+if (Test-Path flatcam/step3-top-pads.nc) {
+  & $Ruby scripts/post-makera.rb flatcam/step3-top-pads.nc T5 $TopPadDepthRule
+}
+& $Ruby scripts/post-makera.rb flatcam/step4-top-align.nc T3
+
+# Flip the board across the Y alignment axis before step 5.
+& $Ruby scripts/post-makera.rb flatcam/step5-bot-iso.nc T2
+if (Test-Path flatcam/step6-bot-pads.nc) {
+  & $Ruby scripts/post-laser-makera.rb flatcam/step6-bot-pads.nc 70 $LaserXOffset $LaserYOffset 900
+}
+if (Test-Path flatcam/step6-bot-silk.nc) {
+  & $Ruby scripts/post-laser-makera.rb flatcam/step6-bot-silk.nc 10 $LaserXOffset $LaserYOffset 150
+}
+if (Test-Path flatcam/step7-bot-pads.nc) {
+  & $Ruby scripts/post-makera.rb flatcam/step7-bot-pads.nc T5 $BottomPadDepthRule
+}
+
+'''
+
+
+def write_gen_all_powershell_script(
+    project_dir: Path,
+    drill_jobs: list[dict],
+    cutout_diameter: float,
+    mappings: dict[int, str],
+) -> Path:
+    """Write the native Windows equivalent of the generated Bash finalizer."""
+    script_path = project_dir / "scripts" / "gen.all.ps1"
+    existing = script_path.read_text(encoding="utf-8-sig") if script_path.exists() else ""
+    if MANAGED_START in existing:
+        prefix = existing.split(MANAGED_START, 1)[0]
+    elif re.search(r"(?m)^# Final combined operation\.", existing):
+        prefix = re.split(r"(?m)^# Final combined operation\.", existing, maxsplit=1)[0]
+    else:
+        prefix = existing.rstrip() + "\n\n" if existing.strip() else _default_powershell_prefix()
+
+    prefix = prefix.replace(
+        "# T1: 1.0 mm endmill, large holes and final cutout",
+        "# T1: 1.1 mm drill/cutter, large holes and final cutout",
+    ).replace(
+        "# T6: 0.5 mm endmill, vias/small holes",
+        "# T6: approximately 0.95 mm drill, vias/small holes",
+    )
+    if "# T4: 3.0 mm drill, large holes" not in prefix:
+        prefix = prefix.replace(
+            "# T3: 2.0 mm endmill, alignment peg holes\n",
+            "# T3: 2.0 mm endmill, alignment peg holes\n# T4: 3.0 mm drill, large holes\n",
+        )
+
+    # PowerShell 5 does not make a non-zero native-process exit fatal under
+    # ErrorActionPreference. Route every Ruby call through an explicit check.
+    prefix = prefix.replace("& $Ruby ", "Invoke-Ruby ")
+    if "function Invoke-Ruby" not in prefix:
+        helper = '''$ErrorActionPreference = "Stop"
+
+function Invoke-Ruby {
+  & $Ruby @Args
+  if ($LASTEXITCODE -ne 0) {
+    throw "Ruby command failed with exit code $LASTEXITCODE"
+  }
+}'''
+        prefix = prefix.replace('$ErrorActionPreference = "Stop"', helper, 1)
+
+    matching_cutout_drill = next(
+        (drill for drill in drill_jobs if abs(drill["diameter"] - cutout_diameter) < 0.0005),
+        None,
+    )
+    cutout_tool_default = (
+        f"$Drill{matching_cutout_drill['index']}Tool"
+        if matching_cutout_drill is not None
+        else '"UNMAPPED"'
+    )
+
+    lines = [
+        MANAGED_START,
+        "# Review these Carvera tool-slot mappings before running the final combine.",
+        "# Environment overrides such as DRILL1_TOOL and CUTOUT_TOOL are supported.",
+    ]
+    for drill in drill_jobs:
+        index = drill["index"]
+        mapping = mappings.get(index, DEFAULT_DRILL_TOOLS.get(index, "UNMAPPED"))
+        lines.append(
+            f'$Drill{index}Tool = if ($env:DRILL{index}_TOOL) {{ $env:DRILL{index}_TOOL }} else {{ "{mapping}" }}  # {drill["diameter"]:.3f} mm'
+        )
+
+    lines.extend(("", "$drillJobs = @("))
+    for drill in drill_jobs:
+        lines.append(f'  "flatcam/{drill["filename"]}:${{Drill{drill["index"]}Tool}}"')
+    lines.extend(
+        (
+            ")",
+            "",
+            "foreach ($spec in $drillJobs) {",
+            '  if ($spec.EndsWith(":UNMAPPED", [System.StringComparison]::OrdinalIgnoreCase)) {',
+            '    throw "Set every DRILLn_TOOL mapping in scripts/gen.all.ps1 before combining."',
+            "  }",
+            "}",
+            "",
+            "$finalJobs = @($drillJobs)",
+            f'$cutoutFile = "flatcam/step{FINAL_STEP + len(drill_jobs)}-cutout.nc"',
+            'if (-not (Test-Path $cutoutFile) -and (Test-Path "flatcam/cutout.nc")) {',
+            '  $cutoutFile = "flatcam/cutout.nc"',
+            "}",
+            "if (Test-Path $cutoutFile) {",
+            f'  $cutoutTool = if ($env:CUTOUT_TOOL) {{ $env:CUTOUT_TOOL }} else {{ {cutout_tool_default} }}  # {cutout_diameter:.3f} mm',
+            '  if ($cutoutTool -eq "UNMAPPED") {',
+            '    throw "Set CUTOUT_TOOL for the cutout cutter before combining."',
+            "  }",
+            '  $finalJobs += "${cutoutFile}:${cutoutTool}"',
+            "}",
+            "",
+            "if ($finalJobs.Count -gt 0) {",
+            f'  Invoke-Ruby scripts/combine.rb cut/step{FINAL_STEP}-final.nc @finalJobs',
+            "}",
+            MANAGED_END,
+            "",
+        )
+    )
+    script_path.write_text(prefix + "\n".join(lines), encoding="utf-8", newline="\n")
+    return script_path
+
+
+def write_gen_all_scripts(
+    project_dir: Path,
+    drill_jobs: list[dict],
+    cutout_diameter: float,
+) -> tuple[Path, Path]:
+    powershell_path = project_dir / "scripts" / "gen.all.ps1"
+    existing_powershell = (
+        powershell_path.read_text(encoding="utf-8-sig")
+        if powershell_path.exists()
+        else ""
+    )
+    powershell_mappings = _existing_powershell_drill_mappings(existing_powershell)
+    shell_path = write_gen_all_script(project_dir, drill_jobs, cutout_diameter)
+    mappings = _existing_drill_mappings(shell_path.read_text(encoding="utf-8"))
+    mappings.update(powershell_mappings)
+    powershell_path = write_gen_all_powershell_script(
+        project_dir, drill_jobs, cutout_diameter, mappings
+    )
+    return shell_path, powershell_path
+
+
 def generate_cnc_jobs(objects: list[dict], project_dir: Path, defaults: dict) -> list[dict]:
-    """Generate FlatCAM-compatible CNCJob objects, raw NC files, and gen.all.sh."""
+    """Generate CNCJob objects, raw NC files, and Windows/Unix finalizers."""
     by_name = {obj.get("options", {}).get("name"): obj for obj in objects}
     output_dir = project_dir / "flatcam"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -598,6 +778,7 @@ def generate_cnc_jobs(objects: list[dict], project_dir: Path, defaults: dict) ->
     )
 
     cutout_diameter = float(next(iter(cutout["tools"].values()))["tooldia"])
-    script_path = write_gen_all_script(project_dir, drill_jobs, cutout_diameter)
-    print(f"script: {script_path}")
+    shell_path, powershell_path = write_gen_all_scripts(project_dir, drill_jobs, cutout_diameter)
+    print(f"script: {shell_path}")
+    print(f"script: {powershell_path}")
     return jobs

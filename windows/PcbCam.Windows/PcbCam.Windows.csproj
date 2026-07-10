@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PcbCam</AssemblyName>
+    <RootNamespace>PcbCam.Windows</RootNamespace>
+    <ApplicationIcon Condition="Exists('Assets\pcb-cam.ico')">Assets\pcb-cam.ico</ApplicationIcon>
+  </PropertyGroup>
+</Project>

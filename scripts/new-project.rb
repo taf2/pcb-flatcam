@@ -5,6 +5,9 @@ require "fileutils"
 require "rbconfig"
 require "shellwords"
 
+$stdout.sync = true
+$stderr.sync = true
+
 ROOT = File.expand_path("..", __dir__)
 PYTHON = ENV["PCB_CAM_PYTHON"] || File.join(ROOT, ".venv", "Scripts", "python.exe")
 LEGACY_NEW_PROJECT = ENV["PCB_CAM_LEGACY_NEW_PROJECT"] || begin
@@ -15,13 +18,12 @@ LEGACY_NEW_PROJECT = ENV["PCB_CAM_LEGACY_NEW_PROJECT"] || begin
   ]
   candidates.find { |path| File.file?(path) }
 end
-BASH = ENV["PCB_CAM_BASH"] || begin
+POWERSHELL = ENV["PCB_CAM_POWERSHELL"] || begin
   candidates = [
-    "/usr/bin/bash",
-    "C:/cygwin64/bin/bash.exe",
-    "C:/cygwin/bin/bash.exe"
+    "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    "C:/Program Files/PowerShell/7/pwsh.exe"
   ]
-  candidates.find { |path| File.file?(path) } || "bash"
+  candidates.find { |path| File.file?(path) } || "powershell.exe"
 end
 
 def abort_usage
@@ -91,15 +93,18 @@ end
 flatcam_project = File.join(project_path, "Project_#{project_slug(zip_path)}_start.FlatPrj")
 run!(PYTHON, "-m", "pcb_cam", "flatprj", project_path, "--output", flatcam_project)
 
-gen_all = File.join(project_path, "scripts", "gen.all.sh")
+gen_all = File.join(project_path, "scripts", "gen.all.ps1")
 abort "Generated CNC build script not found: #{gen_all}" unless File.file?(gen_all)
 
 run!(
-  BASH,
-  "-c",
-  'export PATH="/usr/local/bin:/usr/bin:$PATH"; exec bash "$@"',
-  "pcb-cam",
-  "scripts/gen.all.sh",
+  POWERSHELL,
+  "-NoLogo",
+  "-NoProfile",
+  "-NonInteractive",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-File",
+  "scripts/gen.all.ps1",
   chdir: project_path
 )
 

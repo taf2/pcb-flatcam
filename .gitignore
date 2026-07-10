@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
-
+windows/**/bin/
+windows/**/obj/
+artifacts/
