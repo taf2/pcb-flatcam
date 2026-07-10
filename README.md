@@ -57,6 +57,47 @@ A cyan, non-machining geometry named `PCB Flip Axis Y (Alignment)` connects the
 midpoints of the lower and upper alignment-hole pairs. It shows the exact plane
 used to flip the PCB and makes the hole symmetry easy to verify in FlatCAM.
 
+`Drill_PTH_Through.DRL` is also split into ascending drill groups. Source tool
+diameters are merged only when the full group span is within 0.1 mm; each group
+diameter is the mean rounded to 0.001 mm. The generated `Drill1.DRL`,
+`Drill2.DRL`, and so on are written to `gerber/ready` and included as distinct
+Excellon objects in the FlatCAM project. The original source file is preserved.
+
+Raw CNC files are written to `flatcam` and included as CNCJob objects named
+`step1`, `step2`, and so on. Steps 1-4 are the top isolation, top silkscreen,
+top solder-mask clearing, and alignment drills. After the physical Y-axis flip,
+steps 5-7 repeat the three geometry operations for the prepared/mirrored bottom
+layers. Dynamic `DrillN.DRL` jobs begin at step 8.
+
+The generated `scripts/gen.all.sh` keeps the existing post-processing pattern.
+Its final managed block has one explicit `DRILLn_TOOL` Carvera mapping per
+dynamic drill group and combines all groups with tool changes. The first three
+groups default to `Drill1=T6` (approximately 0.95 mm), `Drill2=T1` (1.1 mm),
+and `Drill3=T4` (3.0 mm). The high-level Ruby command runs `gen.all.sh`
+automatically after generating the FlatCAM project, so it produces the
+machine-ready files in `cut` as part of the same workflow. Saved mappings and
+environment overrides are preserved. A fourth or later group defaults to
+`UNMAPPED`, and the build stops until its physical Carvera slot is assigned.
+
+CNC depth conventions follow the completed `light-proj2` workflow: isolation
+uses -0.100 mm, silkscreen/laser source jobs use -0.050 mm, solder-mask
+spring-bit jobs use 0.000 mm, alignment drills use -5.800 mm, and board drills
+use -1.850 mm with 0.700 mm pecks.
+
+The final geometry is `Gerber_BoardOutlineLayer.GKO_cutout`, made with a 1.1 mm
+C1 cutter at -1.8 mm, 0.6 mm depth per pass, 0.1 mm margin, and 2 mm Thin gaps
+at the top and bottom. The thin support regions stop at -1.0 mm. Its dynamic
+step follows all `DrillN` jobs and is included in `cut/step8-final.nc` using
+`CUTOUT_TOOL`. When a 1.1 mm dynamic drill group exists, the cutout automatically
+reuses that group's Carvera mapping (currently `DRILL2_TOOL`).
+
+To keep FlatCAM startup and inspection fast, generated projects open with only
+the board outline, copper-stock outline, alignment drills, and cyan flip-axis
+geometry visible. All source layers, generated machining geometries, split
+drills, and CNCJob objects remain in the project but start with plotting
+disabled; enable individual objects in FlatCAM when they need inspection or
+tweaking.
+
 The lower-level FlatCAM project writer is still available for debugging:
 
 ```bash

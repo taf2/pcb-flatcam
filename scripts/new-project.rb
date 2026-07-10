@@ -15,6 +15,14 @@ LEGACY_NEW_PROJECT = ENV["PCB_CAM_LEGACY_NEW_PROJECT"] || begin
   ]
   candidates.find { |path| File.file?(path) }
 end
+BASH = ENV["PCB_CAM_BASH"] || begin
+  candidates = [
+    "/usr/bin/bash",
+    "C:/cygwin64/bin/bash.exe",
+    "C:/cygwin/bin/bash.exe"
+  ]
+  candidates.find { |path| File.file?(path) } || "bash"
+end
 
 def abort_usage
   warn "Usage: ruby scripts/new-project.rb PROJECT_PATH GERBER_ZIP"
@@ -83,4 +91,17 @@ end
 flatcam_project = File.join(project_path, "Project_#{project_slug(zip_path)}_start.FlatPrj")
 run!(PYTHON, "-m", "pcb_cam", "flatprj", project_path, "--output", flatcam_project)
 
+gen_all = File.join(project_path, "scripts", "gen.all.sh")
+abort "Generated CNC build script not found: #{gen_all}" unless File.file?(gen_all)
+
+run!(
+  BASH,
+  "-c",
+  'export PATH="/usr/local/bin:/usr/bin:$PATH"; exec bash "$@"',
+  "pcb-cam",
+  "scripts/gen.all.sh",
+  chdir: project_path
+)
+
 puts "FlatCAM project: #{flatcam_project}"
+puts "Carvera NC files: #{File.join(project_path, 'cut')}"

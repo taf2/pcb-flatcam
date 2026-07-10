@@ -16,6 +16,9 @@ from .alignment import (
     serialize_alignment_drills,
     serialize_flip_axis_geometry,
 )
+from .cnc_jobs import generate_cnc_jobs
+from .cutout import BOARD_CUTOUT, apply_cutout_defaults, serialize_cutout_geometry
+from .drill_split import DRILL_SPLIT, split_excellon_file
 from .isolation import (
     COPPER_ISOLATION,
     apply_isolation_defaults,
@@ -47,6 +50,9 @@ EXCELLON_FILES = [
     "Drill_PTH_Through_Via.DRL",
 ]
 
+PTH_DRILL_FILE = "Drill_PTH_Through.DRL"
+
+COPPER_STOCK_FILE = "Copper_Stock_100x70.GKO"
 TOP_LAYER_FILE = "Gerber_TopLayer.GTL"
 BOTTOM_LAYER_FILE = "Gerber_BottomLayer.GBL"
 BOARD_OUTLINE_FILE = "Gerber_BoardOutlineLayer.GKO"
@@ -54,6 +60,14 @@ TOP_SILKSCREEN_FILE = "Gerber_TopSilkscreenLayer.GTO"
 TOP_SOLDER_MASK_FILE = "Gerber_TopSolderMaskLayer.GTS"
 BOTTOM_SILKSCREEN_FILE = "Gerber_BottomSilkscreenLayer.GBO"
 BOTTOM_SOLDER_MASK_FILE = "Gerber_BottomSolderMaskLayer.GBS"
+DEFAULT_VISIBLE_OBJECTS = frozenset(
+    {
+        COPPER_STOCK_FILE,
+        BOARD_OUTLINE_FILE,
+        "Alignment Drills",
+        "PCB Flip Axis Y (Alignment)",
+    }
+)
 
 
 class _Signal:
@@ -163,6 +177,13 @@ def object_options(defaults: dict, prefix: str, name: str) -> dict:
     return options
 
 
+def apply_default_visibility(objects: list[dict]) -> None:
+    """Keep the project quick to open while retaining every object for later use."""
+    for obj in objects:
+        options = obj.setdefault("options", {})
+        options["plot"] = options.get("name") in DEFAULT_VISIBLE_OBJECTS
+
+
 def color_pair(defaults: dict, index: int) -> tuple[str, str]:
     colors = defaults.get("gerber_color_list") or []
     if index < len(colors):
@@ -220,6 +241,24 @@ def build_objects(project_dir: Path, camlib, Gerber, Excellon, defaults: dict) -
             else:
                 objects.append(data)
 
+    pth_drill_path = ready_dir / PTH_DRILL_FILE
+    if not pth_drill_path.exists():
+        raise SystemExit(f"Missing plated through drill file: {pth_drill_path}")
+    split_drills = split_excellon_file(
+        pth_drill_path,
+        ready_dir,
+        Excellon,
+        defaults,
+        DRILL_SPLIT,
+    )
+    for drill in split_drills:
+        tool = drill["tools"][1]
+        print(
+            f"split drill: {drill['options']['name']} dia={tool['tooldia']:.3f} "
+            f"drills={len(tool['drills'])} slots={len(tool['slots'])}"
+        )
+    objects.extend(split_drills)
+
     board_outline = parsed_gerbers.get(BOARD_OUTLINE_FILE)
     if board_outline is None:
         raise SystemExit(
@@ -270,6 +309,18 @@ def build_objects(project_dir: Path, camlib, Gerber, Excellon, defaults: dict) -
             )
             apply_paint_defaults(defaults, config)
             objects.append(serialize_paint_geometry(gerber, source_name, defaults, config))
+
+    apply_cutout_defaults(defaults, BOARD_CUTOUT)
+    print(
+        f"cutout: {BOARD_OUTLINE_FILE} dia={BOARD_CUTOUT.tool_diameter:g} "
+        f"cutz={BOARD_CUTOUT.cut_z:g} depth/pass={BOARD_CUTOUT.depth_per_pass:g} "
+        f"margin={BOARD_CUTOUT.margin:g} gap={BOARD_CUTOUT.gap_size:g} "
+        f"type=thin gaps={BOARD_CUTOUT.gaps}"
+    )
+    objects.append(serialize_cutout_geometry(board_outline, defaults, BOARD_CUTOUT))
+    objects.extend(generate_cnc_jobs(objects, project_dir, defaults))
+    apply_default_visibility(objects)
+    print(f"visible by default: {', '.join(sorted(DEFAULT_VISIBLE_OBJECTS))}")
     return objects
 
 
