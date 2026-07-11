@@ -80,9 +80,11 @@ object. It uses `Gerber_BoardOutlineLayer.GKO` as the bounding-box reference, a
 corners. Two points are calculated on the left; the other two are their mirrors
 across the outline's vertical centerline.
 
-A cyan, non-machining geometry named `PCB Flip Axis Y (Alignment)` connects the
-midpoints of the lower and upper alignment-hole pairs. It shows the exact plane
-used to flip the PCB and makes the hole symmetry easy to verify in FlatCAM.
+A cyan, non-machining horizontal geometry named `PCB Flip Axis X (Alignment)`
+runs through the center of the alignment-hole pattern. It shows the physical
+X-axis plane used to flip the PCB and makes the hole symmetry easy to verify in
+FlatCAM. The FlatCAM 2-Sided Tool alignment setting remains axis Y; only the
+physical flip visualization is the X axis.
 
 `Drill_PTH_Through.DRL` is also split into ascending drill groups. Source tool
 diameters are merged only when the full group span is within 0.1 mm; each group
@@ -92,7 +94,7 @@ Excellon objects in the FlatCAM project. The original source file is preserved.
 
 Raw CNC files are written to `flatcam` and included as CNCJob objects named
 `step1`, `step2`, and so on. Steps 1-4 are the top isolation, top silkscreen,
-top solder-mask clearing, and alignment drills. After the physical Y-axis flip,
+top solder-mask clearing, and alignment drills. After the physical X-axis flip,
 steps 5-7 repeat the three geometry operations for the prepared/mirrored bottom
 layers. Dynamic `DrillN.DRL` jobs begin at step 8.
 

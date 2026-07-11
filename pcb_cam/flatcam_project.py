@@ -65,7 +65,7 @@ DEFAULT_VISIBLE_OBJECTS = frozenset(
         COPPER_STOCK_FILE,
         BOARD_OUTLINE_FILE,
         "Alignment Drills",
-        "PCB Flip Axis Y (Alignment)",
+        "PCB Flip Axis X (Alignment)",
     }
 )
 

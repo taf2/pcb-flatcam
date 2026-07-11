@@ -428,7 +428,7 @@ mkdir -p cut
 [[ -f flatcam/step3-top-pads.nc ]] && "$RB" scripts/post-makera.rb flatcam/step3-top-pads.nc T5 "$TOP_PAD_DEPTH_RULE"
 "$RB" scripts/post-makera.rb flatcam/step4-top-align.nc T3
 
-# Flip the board across the Y alignment axis before step 5.
+# Flip the board across the X alignment axis before step 5.
 "$RB" scripts/post-makera.rb flatcam/step5-bot-iso.nc T2
 [[ -f flatcam/step6-bot-silk.nc ]] && "$RB" scripts/post-laser-makera.rb flatcam/step6-bot-silk.nc 10 "$LASER_X_OFFSET" "$LASER_Y_OFFSET" 150
 [[ -f flatcam/step7-bot-pads.nc ]] && "$RB" scripts/post-makera.rb flatcam/step7-bot-pads.nc T5 "$BOTTOM_PAD_DEPTH_RULE"
@@ -463,6 +463,10 @@ def write_gen_all_script(
     prefix = prefix.replace(
         "# T6: 0.5 mm endmill, vias/small holes",
         "# T6: approximately 0.95 mm drill, vias/small holes",
+    )
+    prefix = prefix.replace(
+        "# Flip the board across the Y alignment axis before step 5.",
+        "# Flip the board across the X alignment axis before step 5.",
     )
     if "# T4: 3.0 mm drill, large holes" not in prefix:
         prefix = prefix.replace(
@@ -574,7 +578,7 @@ if (Test-Path flatcam/step3-top-pads.nc) {
 }
 & $Ruby scripts/post-makera.rb flatcam/step4-top-align.nc T3
 
-# Flip the board across the Y alignment axis before step 5.
+# Flip the board across the X alignment axis before step 5.
 & $Ruby scripts/post-makera.rb flatcam/step5-bot-iso.nc T2
 if (Test-Path flatcam/step6-bot-pads.nc) {
   & $Ruby scripts/post-laser-makera.rb flatcam/step6-bot-pads.nc 70 $LaserXOffset $LaserYOffset 900
@@ -604,6 +608,11 @@ def write_gen_all_powershell_script(
         prefix = re.split(r"(?m)^# Final combined operation\.", existing, maxsplit=1)[0]
     else:
         prefix = existing.rstrip() + "\n\n" if existing.strip() else _default_powershell_prefix()
+
+    prefix = prefix.replace(
+        "# Flip the board across the Y alignment axis before step 5.",
+        "# Flip the board across the X alignment axis before step 5.",
+    )
 
     prefix = prefix.replace(
         "# T1: 1.0 mm endmill, large holes and final cutout",

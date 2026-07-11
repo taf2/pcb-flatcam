@@ -115,10 +115,10 @@ def serialize_flip_axis_geometry(alignment_drills: dict, defaults: dict) -> dict
 
     xs = [point.x for point in drills]
     ys = [point.y for point in drills]
-    center_x = (min(xs) + max(xs)) / 2.0
-    axis_line = LineString(((center_x, min(ys)), (center_x, max(ys))))
+    center_y = (min(ys) + max(ys)) / 2.0
+    axis_line = LineString(((min(xs), center_y), (max(xs), center_y)))
 
-    name = "PCB Flip Axis Y (Alignment)"
+    name = "PCB Flip Axis X (Alignment)"
     options = {
         key.removeprefix("geometry_"): deepcopy(value)
         for key, value in defaults.items()
