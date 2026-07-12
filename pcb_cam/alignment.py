@@ -10,7 +10,9 @@ from shapely.geometry import LineString, Point
 @dataclass(frozen=True)
 class AlignmentConfig:
     drill_diameter: float = 2.0
-    axis: str = "Y"
+    # FlatCAM axis names describe the physical line of reflection.  Axis X
+    # reflects Y coordinates, matching prepare.rb's mirror-axis=y output.
+    axis: str = "X"
     clearance: float = 5.0
 
 
@@ -23,6 +25,7 @@ def apply_alignment_defaults(defaults: dict, config: AlignmentConfig) -> None:
             "tools_2sided_axis_loc": "box",
             "tools_2sided_drilldia": config.drill_diameter,
             "tools_2sided_allign_axis": config.axis,
+            "tools_2sided_mirror_axis": config.axis,
         }
     )
 
@@ -33,22 +36,26 @@ def alignment_points(outline, config: AlignmentConfig = PCB_ALIGNMENT) -> list[P
         raise ValueError("Alignment drill diameter must be positive")
     if config.clearance <= 0:
         raise ValueError("Alignment clearance must be positive")
-    if config.axis != "Y":
-        raise ValueError("The current PCB alignment recipe requires axis Y")
+    if config.axis != "X":
+        raise ValueError("The current PCB alignment recipe requires physical flip axis X")
 
     xmin, ymin, xmax, ymax = outline.bounds()
     center_x = (xmin + xmax) / 2.0
     center_y = (ymin + ymax) / 2.0
 
+    # Both seeds are below the X reflection axis. FlatCAM mirrors their Y
+    # coordinates to create the two partners above the board.
     seed_points = (
         Point(xmin - config.clearance, ymin - config.clearance),
-        Point(xmin - config.clearance, ymax + config.clearance),
+        Point(xmax + config.clearance, ymin - config.clearance),
     )
     points = []
     for seed in seed_points:
-        mirrored = affinity.scale(seed, -1.0, 1.0, origin=(center_x, center_y))
+        mirrored = affinity.scale(seed, 1.0, -1.0, origin=(center_x, center_y))
         points.extend((seed, mirrored))
-    return points
+
+    # Keep a stable lower-row-then-upper-row drill order in generated NC files.
+    return sorted(points, key=lambda point: (point.y, point.x))
 
 
 def _object_options(defaults: dict, name: str) -> dict:

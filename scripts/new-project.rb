@@ -25,6 +25,9 @@ POWERSHELL = ENV["PCB_CAM_POWERSHELL"] || begin
   ]
   candidates.find { |path| File.file?(path) } || "powershell.exe"
 end
+# The legacy prep scripts name the coordinate being reflected, not the
+# physical mirror line. Reflecting Y coordinates is a physical X-axis flip.
+BOTTOM_REFLECTED_COORDINATE = "y"
 
 def abort_usage
   warn "Usage: ruby scripts/new-project.rb PROJECT_PATH GERBER_ZIP"
@@ -61,13 +64,29 @@ def refresh_existing_project(project_path, zip_path)
 
   target_zip = File.join(project_path, File.basename(zip_path))
   FileUtils.cp(zip_path, target_zip) unless File.expand_path(zip_path) == File.expand_path(target_zip)
-  run!(RbConfig.ruby, "prepare.rb", File.basename(target_zip), "100", "70", "y", chdir: project_path)
+  run!(
+    RbConfig.ruby,
+    "prepare.rb",
+    File.basename(target_zip),
+    "100",
+    "70",
+    BOTTOM_REFLECTED_COORDINATE,
+    chdir: project_path
+  )
 end
 
 def scaffold_new_project(project_path, zip_path)
   abort "Legacy project starter not found. Set PCB_CAM_LEGACY_NEW_PROJECT to scripts/new-project.rb." unless LEGACY_NEW_PROJECT
 
-  run!(RbConfig.ruby, LEGACY_NEW_PROJECT, "--no-flatcam-project", project_path, zip_path)
+  run!(
+    RbConfig.ruby,
+    LEGACY_NEW_PROJECT,
+    "--no-flatcam-project",
+    "--mirror-axis",
+    BOTTOM_REFLECTED_COORDINATE,
+    project_path,
+    zip_path
+  )
 end
 
 require_python!
@@ -110,3 +129,4 @@ run!(
 
 puts "FlatCAM project: #{flatcam_project}"
 puts "Carvera NC files: #{File.join(project_path, 'cut')}"
+puts "Board flip after step 4: rotate across the physical X axis (top edge swaps with bottom edge)."

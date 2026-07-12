@@ -629,12 +629,21 @@ def write_gen_all_powershell_script(
 
     # PowerShell 5 does not make a non-zero native-process exit fatal under
     # ErrorActionPreference. Route every Ruby call through an explicit check.
+    # Normalize helpers written by older runs before replacing Ruby command
+    # lines; otherwise refreshing a project makes Invoke-Ruby call itself.
+    prefix = prefix.replace(
+        "function Invoke-Ruby {\n  Invoke-Ruby @Args",
+        "function Invoke-Ruby {\n  & ($Ruby) @Args",
+    ).replace(
+        "function Invoke-Ruby {\n  & $Ruby @Args",
+        "function Invoke-Ruby {\n  & ($Ruby) @Args",
+    )
     prefix = prefix.replace("& $Ruby ", "Invoke-Ruby ")
     if "function Invoke-Ruby" not in prefix:
         helper = '''$ErrorActionPreference = "Stop"
 
 function Invoke-Ruby {
-  & $Ruby @Args
+  & ($Ruby) @Args
   if ($LASTEXITCODE -ne 0) {
     throw "Ruby command failed with exit code $LASTEXITCODE"
   }

@@ -76,15 +76,20 @@ The same recipes are applied to the bottom-side Gerbers:
 
 The 2-Sided Tool preparation is represented by an `Alignment Drills` Excellon
 object. It uses `Gerber_BoardOutlineLayer.GKO` as the bounding-box reference, a
-2 mm drill, axis Y, and four symmetric holes placed 5 mm outside the outline
-corners. Two points are calculated on the left; the other two are their mirrors
-across the outline's vertical centerline.
+2 mm drill, physical axis X, and four symmetric holes placed 5 mm outside the
+outline corners. Two points are calculated below the board; the other two are
+their mirrors across the outline's horizontal centerline.
 
 A cyan, non-machining horizontal geometry named `PCB Flip Axis X (Alignment)`
 runs through the center of the alignment-hole pattern. It shows the physical
 X-axis plane used to flip the PCB and makes the hole symmetry easy to verify in
-FlatCAM. The FlatCAM 2-Sided Tool alignment setting remains axis Y; only the
-physical flip visualization is the X axis.
+FlatCAM. The FlatCAM 2-Sided Tool alignment and mirror settings are both axis X.
+The legacy prep argument remains `mirror-axis y` because that script names the
+coordinate it reflects: reflecting Y coordinates is the same physical X-axis
+flip. Bottom Gerbers, bottom drills, alignment holes, and the flip guide
+therefore all use the transform `(x, y) -> (x, 2 * center_y - y)`.
+Operationally, after step 4, flip the stock so its top and bottom edges exchange
+places; do not flip it left-to-right.
 
 `Drill_PTH_Through.DRL` is also split into ascending drill groups. Source tool
 diameters are merged only when the full group span is within 0.1 mm; each group
