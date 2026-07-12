@@ -67,6 +67,7 @@ public partial class MainWindow : Window
         SelectedZipText.Foreground = (System.Windows.Media.Brush)FindResource("Ink");
         GerberError.Text = string.Empty;
         ProjectNameBox.Text = ProjectSlug(path);
+        CarveraFolderBox.Text = "PCB-CAM/" + ProjectSlug(path);
         if (string.IsNullOrWhiteSpace(OutputFolderBox.Text))
             OutputFolderBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
     }
@@ -137,6 +138,19 @@ public partial class MainWindow : Window
             ProjectError.Text = "That project folder already exists. Enable refresh or choose another name.";
             return false;
         }
+        if (UploadToCarveraBox.IsChecked == true)
+        {
+            if (string.IsNullOrWhiteSpace(CarveraHostBox.Text))
+            {
+                ProjectError.Text = "Enter the Carvera IP address.";
+                return false;
+            }
+            if (!Regex.IsMatch(CarveraFolderBox.Text.Trim(), "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"))
+            {
+                ProjectError.Text = "Carvera work folder may contain letters, numbers, dots, underscores, hyphens, and / only.";
+                return false;
+            }
+        }
         return true;
     }
 
@@ -172,9 +186,14 @@ public partial class MainWindow : Window
 
         try
         {
-            await new WorkflowRunner(_root).RunAsync(_zipPath!, _projectPath!, progress, _buildCancellation.Token);
+            var carveraTransfer = UploadToCarveraBox.IsChecked == true
+                ? new CarveraTransferOptions(CarveraHostBox.Text.Trim(), CarveraFolderBox.Text.Trim())
+                : null;
+            await new WorkflowRunner(_root).RunAsync(_zipPath!, _projectPath!, carveraTransfer, progress, _buildCancellation.Token);
             BuildTitle.Text = "Your PCB project is ready";
-            BuildStage.Text = "FlatCAM project and Carvera machine files were created successfully.";
+            BuildStage.Text = carveraTransfer is null
+                ? "FlatCAM project and Carvera machine files were created successfully."
+                : "FlatCAM project, machine files, and Carvera work folder were created successfully.";
             BuildProgress.Value = 100;
             NextButton.Content = "Build another";
             NextButton.Visibility = Visibility.Visible;
@@ -226,6 +245,11 @@ public partial class MainWindow : Window
         try { ProjectPathPreview.Text = "Project: " + Path.Combine(OutputFolderBox.Text, ProjectNameBox.Text); }
         catch { ProjectPathPreview.Text = string.Empty; }
         ProjectError.Text = string.Empty;
+    }
+
+    private void UploadToCarvera_Changed(object sender, RoutedEventArgs e)
+    {
+        CarveraOptionsPanel.Visibility = UploadToCarveraBox.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowPage(int page)

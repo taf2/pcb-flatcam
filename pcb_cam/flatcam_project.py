@@ -411,6 +411,10 @@ def build_parser() -> argparse.ArgumentParser:
     flatprj.add_argument("--flatcam-source", default=str(default_flatcam_source()), help="FlatCAM Beta source checkout")
     flatprj.set_defaults(func=command_flatprj)
 
+    from .carvera_transfer import add_parser as add_carvera_upload_parser
+
+    add_carvera_upload_parser(sub)
+
     return parser
 
 

@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "optparse"
 require "rbconfig"
 require "shellwords"
 
@@ -30,9 +31,13 @@ end
 BOTTOM_REFLECTED_COORDINATE = "y"
 
 def abort_usage
-  warn "Usage: ruby scripts/new-project.rb PROJECT_PATH GERBER_ZIP"
+  warn "Usage: ruby scripts/new-project.rb [--carvera-upload] [--carvera-host HOST] [--carvera-port PORT] [--carvera-folder FOLDER] PROJECT_PATH GERBER_ZIP"
   warn "Debug: ruby scripts/new-project.rb flatprj PROJECT_PATH [--output PATH]"
   exit 1
+end
+
+def truthy?(value)
+  %w[1 true yes on].include?(value.to_s.downcase)
 end
 
 def require_python!
@@ -89,11 +94,26 @@ def scaffold_new_project(project_path, zip_path)
   )
 end
 
-require_python!
-
 if ARGV.first == "flatprj"
+  require_python!
   exec PYTHON, "-m", "pcb_cam", *ARGV
 end
+
+options = {
+  carvera_upload: truthy?(ENV["PCB_CAM_CARVERA_UPLOAD"]),
+  carvera_host: ENV.fetch("PCB_CAM_CARVERA_HOST", "192.168.1.27"),
+  carvera_port: Integer(ENV.fetch("PCB_CAM_CARVERA_PORT", "2222")),
+  carvera_folder: ENV["PCB_CAM_CARVERA_FOLDER"]
+}
+
+OptionParser.new do |parser|
+  parser.on("--carvera-upload", "Create a Carvera work folder and upload cut/*.nc files") { options[:carvera_upload] = true }
+  parser.on("--carvera-host HOST", "Carvera IP or hostname") { |value| options[:carvera_host] = value }
+  parser.on("--carvera-port PORT", Integer, "Carvera Controller TCP port") { |value| options[:carvera_port] = value }
+  parser.on("--carvera-folder FOLDER", "Folder below /sd on the Carvera") { |value| options[:carvera_folder] = value }
+end.parse!
+
+require_python!
 
 abort_usage unless ARGV.length == 2
 
@@ -127,6 +147,23 @@ run!(
   chdir: project_path
 )
 
+if options[:carvera_upload]
+  upload_command = [
+    PYTHON,
+    "-m",
+    "pcb_cam",
+    "carvera-upload",
+    project_path,
+    "--host",
+    options[:carvera_host],
+    "--port",
+    options[:carvera_port].to_s
+  ]
+  upload_command += ["--remote-folder", options[:carvera_folder]] if options[:carvera_folder]
+  run!(*upload_command)
+end
+
 puts "FlatCAM project: #{flatcam_project}"
 puts "Carvera NC files: #{File.join(project_path, 'cut')}"
+puts "Carvera upload: complete" if options[:carvera_upload]
 puts "Board flip after step 4: rotate across the physical X axis (top edge swaps with bottom edge)."

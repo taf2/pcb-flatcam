@@ -5,6 +5,7 @@ using System.Text;
 namespace PcbCam.Windows;
 
 internal sealed record WorkflowProgress(int Percent, string Stage, string? Line = null);
+internal sealed record CarveraTransferOptions(string Host, string Folder);
 
 internal sealed class WorkflowRunner
 {
@@ -45,6 +46,7 @@ internal sealed class WorkflowRunner
     public async Task RunAsync(
         string zipPath,
         string projectPath,
+        CarveraTransferOptions? carveraTransfer,
         IProgress<WorkflowProgress> progress,
         CancellationToken cancellationToken)
     {
@@ -60,6 +62,14 @@ internal sealed class WorkflowRunner
             CreateNoWindow = true,
         };
         start.ArgumentList.Add(script);
+        if (carveraTransfer is not null)
+        {
+            start.ArgumentList.Add("--carvera-upload");
+            start.ArgumentList.Add("--carvera-host");
+            start.ArgumentList.Add(carveraTransfer.Host);
+            start.ArgumentList.Add("--carvera-folder");
+            start.ArgumentList.Add(carveraTransfer.Folder);
+        }
         start.ArgumentList.Add(projectPath);
         start.ArgumentList.Add(zipPath);
         start.Environment["PYTHONUNBUFFERED"] = "1";
@@ -104,6 +114,10 @@ internal sealed class WorkflowRunner
         var normalized = line.ToLowerInvariant();
         var stage = normalized switch
         {
+            var s when s.StartsWith("carvera work folder:") => new WorkflowProgress(87, "Creating Carvera work folder...", line),
+            var s when s.StartsWith("carvera connected:") => new WorkflowProgress(89, "Connecting to Carvera...", line),
+            var s when s.StartsWith("carvera upload:") => new WorkflowProgress(93, "Uploading files to Carvera...", line),
+            var s when s.StartsWith("carvera transfer complete:") => new WorkflowProgress(95, "Carvera transfer complete...", line),
             var s when s.Contains("prepare.rb") || s.Contains("project_starter") => new WorkflowProgress(12, "Preparing Gerber layers…", line),
             var s when s.StartsWith("gerber:") => new WorkflowProgress(28, "Reading Gerber layers…", line),
             var s when s.StartsWith("excellon:") || s.StartsWith("split drill:") => new WorkflowProgress(40, "Preparing drill groups…", line),

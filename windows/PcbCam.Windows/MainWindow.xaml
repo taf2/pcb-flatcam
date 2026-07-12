@@ -70,6 +70,23 @@
                             <TextBlock x:Name="ProjectPathPreview" Foreground="{StaticResource Accent}" Margin="0,18,0,0" TextWrapping="Wrap" />
                             <TextBlock x:Name="ProjectError" Foreground="#B42318" Margin="0,10,0,0" TextWrapping="Wrap" />
                         </StackPanel>
+                        <StackPanel Grid.Row="3" Margin="0,20,0,0">
+                            <CheckBox x:Name="UploadToCarveraBox" Checked="UploadToCarvera_Changed" Unchecked="UploadToCarvera_Changed" Foreground="{StaticResource Ink}">
+                                <TextBlock Text="Upload generated NC files to my Carvera" />
+                            </CheckBox>
+                            <Grid x:Name="CarveraOptionsPanel" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,18,0">
+                                    <TextBlock Text="Carvera IP address" Foreground="{StaticResource Ink}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="CarveraHostBox" Text="192.168.1.27" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Carvera work folder" Foreground="{StaticResource Ink}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="CarveraFolderBox" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="Creates the folder below /sd, then copies every finished cut .nc file. It never starts a machine job." Foreground="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
                     </Grid>
 
                     <Grid x:Name="BuildPage" Visibility="Collapsed">

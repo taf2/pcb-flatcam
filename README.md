@@ -29,6 +29,37 @@ requires Windows Ruby, the repository `.venv`, FlatCAM source, the legacy
 project starter, and Windows PowerShell; the app checks the local prerequisites
 before starting and shows actionable errors without opening a terminal.
 
+### Optional Carvera upload
+
+On the project page, enable **Upload generated NC files to my Carvera** to add
+the final transfer step. It defaults to the Carvera at `192.168.1.27` and puts
+the files in `/sd/PCB-CAM/<project-name>`. The workflow creates that work folder
+and uploads every `.nc` file from the generated `cut` directory. It does not
+select a file, configure tools, or start the machine; use the Makera Controller
+to inspect the uploaded files and begin the job when the physical setup is
+ready. Files with the same name in the selected Carvera work folder are
+replaced.
+
+The same behavior is available from the shell:
+
+```powershell
+ruby scripts/new-project.rb --carvera-upload --carvera-host 192.168.1.27 --carvera-folder PCB-CAM/switch-board C:\Users\you\Desktop\switch-board C:\Users\you\Downloads\Gerber_switch-board.zip
+```
+
+`--carvera-port` overrides the Controller TCP port (it defaults to `2222`). For
+repeatable shell use, the equivalent environment variables are
+`PCB_CAM_CARVERA_UPLOAD=1`, `PCB_CAM_CARVERA_HOST`, `PCB_CAM_CARVERA_PORT`, and
+`PCB_CAM_CARVERA_FOLDER`.
+
+To transfer an already-built project again without rerunning the CAM workflow:
+
+```powershell
+.venv\Scripts\python.exe -m pcb_cam carvera-upload C:\Users\you\Desktop\switch-board --host 192.168.1.27 --remote-folder PCB-CAM/switch-board
+```
+
+Add `--dry-run` to validate the local NC files and see their destination paths
+without connecting to the machine.
+
 The first milestone is a project starter that uses the existing PCB template
 flow, then uses FlatCAM Beta source parsers directly to write FlatCAM's
 compressed JSON `.FlatPrj` format without launching the FlatCAM GUI.
